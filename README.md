@@ -11,7 +11,7 @@ This repository is strictly organized into logical modules. Each lab contains it
 ### ☸️ Kubernetes Labs (Orchestration)
 | Lab ID | Topic / Focus | Core Components Used | Documentation |
 | :--- | :--- | :--- | :--- |
-| **Lab 01** | Multi-Node Cluster Topology & Service Routing | KinD, Namespaces, Pods, NodePort Service | [View Lab 01 Guide](./kubernetes/lab-01-kind-nginx/) |
+| **Lab 01** | Multi-Node Cluster Topology & Service Routing | KinD, Namespaces, Pods, NodePort Service | [View Lab 01 Guide](./kubernetes/lab-01-kubernetes-kind-nodeport/) |
 | **Lab 02** | *Coming Soon (Deployments & ReplicaSets)* | -- | -- |
 
 ### 🐋 Docker Labs (Containerization)
