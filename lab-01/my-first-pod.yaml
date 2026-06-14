@@ -1,0 +1,25 @@
+# Kubernetes API version to cteate an object from the type: Pod.
+apiVersion: v1
+# Telling kind to create an object from the type: Pod
+# "Pod" - the most basic unit that runs containers in k8s.
+kind: Pod
+# General information about the Pod
+metadata:
+  # The unique name we'll give the Pod in this cluster
+  name: example-pod
+  # Labels: help us identify, filer and select the pod later (services for example)
+  labels:
+    app: my-app
+# What Specifications this pod needs to hold
+spec:
+  # List of containers that will run in this Pod (usually only one)
+  containers:
+    # The internal name we give this specific container
+  - name: my-container
+    # The Docker image we want to run 
+    # In this case: Nginx in the latest version
+    image: nginx:latest
+    # Setting the internal ports of the container
+    ports:
+      # Tells k8s that Nginx is listening to traffic in port 80 
+    - containerPort: 80

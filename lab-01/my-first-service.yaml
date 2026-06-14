@@ -1,0 +1,21 @@
+# Kubernetes API version for network settings
+apiVersion: v1
+# Telling kubernetes the network type: in the case 'Service'.
+# Service: a network service that routes traffic
+kind: Service
+metadata:
+  # The name we'll call the service
+  name: my-nginx-service
+spec:
+  # Service type: NodePort allows exposing a port outside the cluster through the servers (Nodes).
+  type: NodePort
+  # The connector: The service will look in the cluster for any pod that has the label "app: my-app" like our pod.
+  selector:
+    app: my-app
+  ports:
+    # The port the service itself will listen INSIDE the cluster.
+  - port: 80
+    # The internal Nginx port inside the Pod, where the traffic will get to in the end.
+    targetPort: 80
+    # The port of the node: Must be 30002, as this is what we opened in the kind-config.yaml file when creating the cluster.
+    nodePort: 30002

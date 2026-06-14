@@ -1,0 +1,24 @@
+# Telling 'KinD' what type of object we will be creating. In this case, a cubernetes cluster.
+kind: Cluster
+# API version of KinD we will be using to read this file.
+apiVersion: kind.x-k8s.io/v1alpha4
+# List of "virtual servers" (Nodes) we will be creating in this cluster.
+nodes:
+# First "server": The control/management "server" of the cluster "the brain".
+- role: control-plane
+  # Routeing port 30000 on my PC to port 30000 in the control "server".
+  extraPortMappings:
+  - containerPort: 30000
+    hostPort: 30000
+    listenAddress: "0.0.0.0" # Allowing access from any IP address
+# Seconds server: The "Work Server" - here our apps and Pods will actually run.
+- role: worker
+  extraPortMappings:
+  # Worker-First-Route: Routeing port 3000 in my PC, will route to port 30001 (!) in the worker server.
+  - containerPort: 30001
+    hostPort: 3000
+    listenAddress: "0.0.0.0"
+  # Worker-Second-Route: Port 8000 in your PC will route to port 30002
+  - containerPort: 30002
+    hostPort: 8000
+    listenAddress: "0.0.0.0"

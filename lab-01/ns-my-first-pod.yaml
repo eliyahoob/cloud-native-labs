@@ -1,0 +1,8 @@
+# V1 is a stable version for creating the Kubernetes object.
+apiVersion: v1
+# Setting the object we want to create using kind. In this case - Namespace.
+kind: Namespace
+# Metadata - general information about the object we're creating
+metadata:
+  # The unique name we will give this Namespace inside this cluster
+  name: test
