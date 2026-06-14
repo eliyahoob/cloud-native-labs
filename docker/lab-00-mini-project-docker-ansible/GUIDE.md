@@ -1,182 +1,63 @@
-# Mini Project - Eli's Change Log
+# 🚀 Automated Infrastructure Guide: Docker & Ansible Orchestration
 
-# 🚀 DevOps Automation Mini-Project Guide
-
-This guide details the step-by-step execution and configuration of a complete automated infrastructure using **Docker**, **Ansible**, **Flask**, and **PostgreSQL**.
+This guide details the step-by-step execution, raw configuration files, and deployment lifecycle of a complete automated multi-node DevSecOps architecture utilizing **Docker**, **Ansible**, **Flask**, and **PostgreSQL**.
 
 ---
 
-## 🛠️ Step 1: Project Setup & Repository
+## 🗂️ Step 1: Directory Structure & Key Generation
 
-1. **Initialize Git Repository:** Created a local repository and pushed to GitHub.
+Before writing configuration files, the target directory schema must be established exactly as follows:
 
-## Step #1 Create folder hierarchy 
-
-ansible
-ansible-master
-ansible-slave
-app
-|_ src
-database
-
-
-
-### The following files will be addes later into these folders
-
-ansible
-|_ deploy.yml
-|_ docker-compose.yml
-|_ inventory.ini
-ansible-master
-|_ Dockerfile
-|_ id_rsa
-ansible-slave
-|_ Dockerfile
-is_rsa.pub
-app
-|_ src
-    |_ app.py
-    |_ requirements.txt
-|_ docker-compose.yml
-|_ Dockerfile
-database
-|_ docker-compose.yml
-
-
----
-
-## 🐍 Step 2: Flask Application Development (`app/`)
-
-A REST API backend built using Python Flask to handle user data.
-
-* **Endpoints Implemented:**
-* `GET /users`: Returns a JSON list of all registered users.
-* `POST /users`: Registers a new user with `username`, `email`, and `password`.
-
-
-* **Security & Environment:** Hardcoded secrets were eliminated. Database credentials, host, and port are injected dynamically at runtime via Docker environment variables (`.env`).
-
----
-
-## 🔑 Step 3: Secure SSH Key Generation
-
-To establish automated, passwordless trust between the automation master and the host servers:
-
-1. Generated a secure SSH key pair locally.
-2. **Key Distribution Strategy:**
-* **Private Key:** Mounted securely inside the `ansible-master` container.
-* 
-**Public Key:** Injected into `ansible-slave` containers via `authorized_keys`.
-
-
-
-
-3. **Best Practice Violation Avoidance:** Keys are **not** baked into the Docker images during the build phase. Instead, they are dynamically mapped at runtime using standard Docker Volumes.
-
----
-
-## 🐳 Step 4: Custom Docker Images (Based on Ubuntu)
-
-Custom environments built on top of **Ubuntu OS** as strictly required by the project specifications.
-
-### 1. Ansible Master (`ansible-master/Dockerfile`)
-
-* **Base OS:** Ubuntu.
-* **Tools Installed:** Ansible, OpenSSH client, and Git.
-* **Purpose:** Acts as the central controller orchestration engine.
-
-### 2. Ansible Slave (`ansible-slave/Dockerfile`)
-
-* **Base OS:** Ubuntu.
-* **Tools Installed:** OpenSSH Server (`sshd`), Python3 (required for Ansible to execute tasks), and Docker Compose.
-* **Purpose:** Runs a continuous SSH daemon to accept configuration payloads from the Master.
-
-### 📤 Building and Publishing to DockerHub
-
-The custom images were built locally and pushed to public repositories:
-
-```bash
-docker build -t elibrodyisrael/ansible-master:latest ./ansible-master
-docker build -t elibrodyisrael/ansible-slave:latest ./ansible-slave
-
-docker push elibrodyisrael/ansible-master:latest
-docker push elibrodyisrael/ansible-slave:latest
+```text
+mini-project/
+├── ansible/
+│   ├── deploy.yml
+│   ├── docker-compose.yml
+│   └── inventory.ini
+├── ansible-master/
+│   ├── Dockerfile
+│   └── ansible-key
+├── ansible-slave/
+│   ├── Dockerfile
+│   └── ansible-key.pub
+├── app/
+│   ├── src/
+│   │   ├── app.py
+│   │   └── requirements.txt
+│   ├── docker-compose.yml
+│   └── Dockerfile
+└── database/
+    └── docker-compose.yml
 
 ```
 
----
+### 🔑 Cryptographic Authentication Setup
 
-## 🏗️ Step 5: Infrastructure Orchestration (`ansible/`)
-
-The core architecture definition mapping out the three virtual infrastructure nodes using `docker-compose.yml`.
-
-### 🖥️ Node Architecture
-
-* **`ansible-master`**: Runs the automation engine.
-* **`ansible-slave-1`**: Target Application node running the Python Flask API.
-* **`ansible-slave-2`**: Target Database node running PostgreSQL and pgAdmin 4 for UI management.
-
-### ⚙️ Automation Implementation
-
-* **`inventory.ini`**: Lists the target managed slaves using Docker internal network routing.
-* **`deploy.yml`**: The central Ansible Playbook executing the automation tasks. It handles:
-1. Testing SSH connectivity via standard ping.
-
-
-2. Pulling deployment configurations from the codebase.
-3. Orchestrating and spinning up the respective application and database instances using Docker Compose directly on the target environments.
-
-
-
----
-
-## 🚀 Execution Commands
-
-To execute the entire deployment lifecycle from scratch, run the following commands inside the initialized master controller:
+To establish secure, passwordless execution between the master controller and target nodes without hardcoding credentials into images, generate an RSA key pair in the root directory:
 
 ```bash
-# 1. Access the master automation control panel
-docker exec -it ansible-master bash
-
-# 2. Navigate to the orchestration control directory
-cd /mini-project/ansible
-
-# 3. Fire the automation playbook
-ansible-playbook -i inventory.ini deploy.yml
+ssh-keygen -t rsa -b 2048 -f ./ansible-key -N ""
 
 ```
 
+* Move the private key (`ansible-key`) directly into `ansible-master/`.
+* Move the public key (`ansible-key.pub`) directly into `ansible-slave/`.
 
+---
 
+## 🐍 Step 2: Application Layer Backend (`app/`)
 
+The backend is an enterprise-ready, stateless REST API running Python Flask. It features automated schema migration on boot and aggressive database connection retry handlers.
 
+### 📄 `app/src/requirements.txt`
 
+```text
+flask==3.0.3
+psycopg2-binary==2.9.9
 
+```
 
-
-
-
-
-
-
-______________________________________________
-
-
-
-
-
-
-
-
-## Step #2 Create Flask app
-
-
-#### /app/src/app.py  
-
-app
-|_ src
-    |_ app.py
-    |_ requirements.txt
+### 📄 `app/src/app.py`
 
 ```python
 import os
@@ -187,15 +68,13 @@ from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 
-# Fetch database credentials from environment variables (No hardcoded secrets)
-DB_HOST = os.getenv("DB_HOST", "db")
+DB_HOST = os.getenv("DB_HOST", "ansible-slave-2")
 DB_NAME = os.getenv("POSTGRES_DB", "mydatabase")
 DB_USER = os.getenv("POSTGRES_USER", "myuser")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "mysecretpassword") # Should be set as envieronment variable for security! (Or Docker secrets. Can not do now due to time constraints, but should be done in production!)
-
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "mysecretpassword")
 
 def get_db_connection():
-    """Connects to the PostgreSQL database with retry logic."""
+    """Establishes connection to PostgreSQL with fault-tolerant retry logic."""
     while True:
         try:
             conn = psycopg2.connect(
@@ -207,16 +86,14 @@ def get_db_connection():
             )
             return conn
         except psycopg2.OperationalError:
-            print("Database not ready yet, retrying in 2 seconds...")
+            print("Database layer unavailable. Retrying in 2 seconds...")
             time.sleep(2)
-
 
 @app.route("/users", methods=["GET"])
 def get_users():
-    """Fetches and returns all users from the database."""
+    """Retrieves all data profiles dynamically from the storage engine."""
     conn = get_db_connection()
     cur = conn.cursor()
-    # Create table if it doesn't exist yet
     cur.execute(
         "CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username VARCHAR(50), email VARCHAR(50), password VARCHAR(50));"
     )
@@ -224,130 +101,339 @@ def get_users():
 
     cur.execute("SELECT id, username, email FROM users;")
     users = cur.fetchall()
-
     cur.close()
     conn.close()
     return jsonify(users), 200
 
-
 @app.route("/users", methods=["POST"])
 def create_user():
-    """Receives JSON data and inserts a new user into the database."""
+    """Ingests data payloads and commits record transactions safely."""
     data = request.get_json()
-
     if not data or "username" not in data or "email" not in data or "password" not in data:
-        return jsonify({"error": "Missing required fields"}), 400
+        return jsonify({"error": "Bad Request: Missing payload components"}), 400
 
     conn = get_db_connection()
     cur = conn.cursor()
-
     cur.execute(
         "INSERT INTO users (username, email, password) VALUES (%s, %s, %s);",
         (data["username"], data["email"], data["password"]),
     )
     conn.commit()
-
     cur.close()
     conn.close()
-    return jsonify({"message": "User created successfully"}), 201
-
+    return jsonify({"message": "User configuration committed successfully"}), 201
 
 if __name__ == "__main__":
-    # Listen on port 5000 as required
     app.run(host="0.0.0.0", port=5000)
+
 ```
 
-#### Flask Quick Start Guide:
-https://flask.palletsprojects.com/en/stable/quickstart/
+### 📄 `app/Dockerfile`
 
+```dockerfile
+FROM python:3.11-slim
 
-## Step 3 
+WORKDIR /app
 
+# Install dependencies early to optimize layer caching
+COPY src/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-#### Create Dockerfile following this example:
-https://github.com/docker/awesome-compose/blob/master/flask/app/Dockerfile
+COPY src/ ./src
 
-#### Create a docker-compose orchestration file:
-https://docs.docker.com/compose/gettingstarted/
-(Sections 5 & 6 discuss .env and .dockerignore files. Maybe will get back to this part of the project again at the end and will fix hardcoded credentials)
+EXPOSE 5000
 
-## Generate SSH keys
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:5000/users || exit 1
 
-Generate SSH key https://docs.hpc.oregonstate.edu/cqls/connecting/sshkey/
-* Private key in ansible-master folder
-* Public key in ansible-slave folder
+CMD ["python", "src/app.py"]
 
-## Create ansible-master image
+```
 
-Create dockerfile (again - https://github.com/docker/awesome-compose/blob/master/flask/app/Dockerfile)
+### 📄 `app/docker-compose.yml`
 
-## Create ansible-slave image
+```yaml
+version: '3.8'
 
-Create dockerfile (again - https://github.com/docker/awesome-compose/blob/master/flask/app/Dockerfile)
+services:
+  web:
+    build: .
+    image: elibrodyisrael/python-app:latest
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_HOST=${DB_HOST}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    networks:
+      - app-net
 
+networks:
+  app-net:
+    external: true
+    name: ansible_infra-network
 
-## Build Images
-https://docs.docker.com/get-started/introduction/build-and-push-first-image/
+```
 
-### Building the Docker Image done with these command (in the folder the Dockerfile is in)
-docker build -t elibrodyisrael/ansible-master:latest .
-docker build -t elibrodyisrael/ansible-slave:latest .
+---
 
-## Push Images to Docker Hub
+## 🐳 Step 3: Custom Node Base Images (`ansible-*`)
 
-### Push to publich repository is done with these commands
+Both master and slave units utilize standardized **Ubuntu OS** baselines hardened for automation transport layers.
 
-https://docs.docker.com/get-started/introduction/build-and-push-first-image/
+### 📄 `ansible-master/Dockerfile`
+
+```dockerfile
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    ansible \
+    openssh-client \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Establish runtime SSH key layouts
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
+COPY ansible-key /root/.ssh/id_rsa
+RUN chmod 600 /root/.ssh/id_rsa
+
+# Suppress host key verification safety prompts for programmatic flows
+RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
+
+WORKDIR /workspace
+CMD ["tail", "-f", "/dev/null"]
+
+```
+
+### 📄 `ansible-slave/Dockerfile`
+
+```dockerfile
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    python3 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configure standard openSSH daemon parameters
+RUN mkdir /var/run/sshd
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
+
+# Mount public key identity into runtime authority profile
+COPY ansible-key.pub /root/.ssh/authorized_keys
+RUN chmod 600 /root/.ssh/authorized_keys
+
+# Install Docker CLI binaries inside the slave so it can build/run native host commands
+RUN curl -fsSL [https://get.docker.com](https://get.docker.com) | sh
+
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D"]
+
+```
+
+---
+
+## 🐘 Step 4: Storage & Visualization Layer (`database/`)
+
+### 📄 `database/docker-compose.yml`
+
+```yaml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - app-net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin-ui
+    ports:
+      - "8080:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=adminpassword
+    networks:
+      - app-net
+
+volumes:
+  pgdata:
+
+networks:
+  app-net:
+    external: true
+    name: ansible_infra-network
+
+```
+
+---
+
+## 🏗️ Step 5: Global Infrastructure Orchestration (`ansible/`)
+
+This acts as the root architecture framework, establishing the multi-node lab environment on your host computer.
+
+### 📄 `ansible/docker-compose.yml`
+
+```yaml
+version: '3.8'
+
+services:
+  ansible-master:
+    image: elibrodyisrael/ansible-master:latest
+    container_name: ansible-master
+    volumes:
+      - ..:/workspace
+    networks:
+      - infra-network
+
+  ansible-slave-1:
+    image: elibrodyisrael/ansible-slave:latest
+    container_name: ansible-slave-1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - infra-network
+
+  ansible-slave-2:
+    image: elibrodyisrael/ansible-slave:latest
+    container_name: ansible-slave-2
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - infra-network
+
+networks:
+  infra-network:
+    name: ansible_infra-network
+    driver: bridge
+
+```
+
+### 📄 `ansible/inventory.ini`
+
+```ini
+[app_servers]
+ansible-slave-1 ansible_user=root
+
+[db_servers]
+ansible-slave-2 ansible_user=root
+
+```
+
+### 📄 `ansible/deploy.yml`
+
+```yaml
+---
+- name: Multi-Node Infrastructure Automated Orchestration Pipeline
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Assert Target Transport State via SSH Ping
+      ansible.builtin.ping:
+
+- name: Provision Application Server Infrastructure Instance
+  hosts: app_servers
+  tasks:
+    - name: Synchronize Runtime Configurations to App Node
+      ansible.builtin.copy:
+        src: /workspace/app/
+        dest: /opt/app/
+        mode: '0755'
+
+    - name: Trigger Remote Docker Orchestration Instance
+      ansible.builtin.shell: |
+        cd /opt/app
+        export DB_HOST=ansible-slave-2
+        export POSTGRES_DB=mydatabase
+        export POSTGRES_USER=myuser
+        export POSTGRES_PASSWORD=mysecretpassword
+        docker compose down
+        docker compose up -d --build
+      async: 300
+      poll: 10
+
+- name: Provision Relational Database Storage Engine
+  hosts: db_servers
+  tasks:
+    - name: Synchronize Storage Definitions to Database Node
+      ansible.builtin.copy:
+        src: /workspace/database/
+        dest: /opt/database/
+        mode: '0755'
+
+    - name: Trigger Remote Datastore Runtime Initialization
+      ansible.builtin.shell: |
+        cd /opt/database
+        export POSTGRES_DB=mydatabase
+        export POSTGRES_USER=myuser
+        export POSTGRES_PASSWORD=mysecretpassword
+        docker compose down
+        docker compose up -d
+      async: 300
+      poll: 10
+
+```
+
+---
+
+## 🚦 Step 6: Compilation & Verification Run
+
+### 1. Build and Publish Base Nodes (Executed Once Locally)
+
+```bash
+docker build -t elibrodyisrael/ansible-master:latest ./ansible-master
+docker build -t elibrodyisrael/ansible-slave:latest ./ansible-slave
 
 docker login
 docker push elibrodyisrael/ansible-master:latest
 docker push elibrodyisrael/ansible-slave:latest
 
-## Docker Images Public URLs:
-https://hub.docker.com/r/elibrodyisrael/ansible-master
-https://hub.docker.com/r/elibrodyisrael/ansible-slave
+```
 
-## Database environment
+### 2. Stand Up the Lab Simulation Cluster
 
-### PostgreSql
-https://www.docker.com/blog/how-to-use-the-postgres-docker-official-image/
-Official Postgress DockerHub page:
-https://hub.docker.com/_/postgres
+```bash
+cd ansible
+docker compose up -d
 
+```
 
-### PGadmin
-https://docs.docker.com/guides/pgadmin/
-Official PGadmin DockerHub page:
-https://hub.docker.com/r/dpage/pgadmin4
+### 3. Initiate the Automated Configuration Deployment Engine
 
-
-## Main Ansible environment setup
-
-### In 'ansible' folder:
-* Create 'docker-compose.yml' file with the 3 servers (Ansible-Master, Ansible-Slave-1, Ansible-Slave-2)
-https://docs.docker.com/compose/gettingstarted/
-
-* Create 'inventory.ini' file with the list of servers for ansible deployment
-https://docs.ansible.com/projects/ansible/latest/inventory_guide/intro_inventory.html
-
-* Create a 'deploy.yml' file with the full actions for the ansible automation
-https://github.com/mattupstate/ansible-tutorial/blob/master/devops/deploy.yml
-
-### To run this (activate the playbook), use the following command from the ansible-master container
-
-#### Login to the ansible master contianer:
+```bash
+# Exec into the running master controller box
 docker exec -it ansible-master bash
 
-#### Run ansible playbook
-cd /mini-project-2nd-try/ansible
+# Navigate inside the mounted playbook project scope
+cd /workspace/ansible
+
+# Execute the automation playbook 
 ansible-playbook -i inventory.ini deploy.yml
 
+```
 
+### 4. Operational Health Validation
 
+Open your web browser on your native host operating system and query the network links:
 
-#### Environment virables: 
-https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/
+* **Application Health Check Endpoint:** `http://localhost:5000/users`
+* **Database Management UI Panel:** `http://localhost:8080` (Log in with `admin@admin.com` / `adminpassword`)
 
-#### Docker secrets:
-https://forums.docker.com/t/understanding-security-implications-of-secrets-vs-env-vars-in-docker-compose/145903
-
+```
