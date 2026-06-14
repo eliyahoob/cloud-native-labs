@@ -1,0 +1,82 @@
+# Specifies the API version for the Deployment resource
+apiVersion: apps/v1
+# Defines the type of Kubernetes resource being created (a Deployment manages Pods)
+kind: Deployment
+
+# Metadata containing basic information about the Deployment
+metadata:
+  # The unique name of this Deployment inside the cluster
+  name: php-apache
+
+# Defines the desired state and behavior of the Deployment
+spec:
+  # The initial number of Pod instances to run before autoscaling takes over
+  replicas: 1
+
+  # Tells the Deployment how to find the Pods it is responsible for managing
+  selector:
+    matchLabels:
+      # It will look for Pods that have the label "app: php-apache"
+      app: php-apache
+
+  # The blueprint/template used to create new Pods
+  template:
+    metadata:
+      # Labels applied to the created Pods (must match the selector above)
+      labels:
+        app: php-apache
+
+    # Specifies the actual infrastructure details of the Pod
+    spec:
+      containers:
+        # A name to identify this specific container inside the Pod
+        - name: php-apache
+          # The pre-built Docker image used to run the PHP-Apache web application
+          image: registry.k8s.io/hpa-example
+
+          # Resource allocation - CRITICAL for the Autoscaler (HPA) to calculate usage
+          resources:
+            # The minimum resources guaranteed for this container to start running
+            requests:
+              # 50m = 50 milliCPUs (5% of 1 CPU core). HPA calculates its 10% threshold based on this!
+              cpu: 50m
+              # The minimum RAM requested (128 Megabytes)
+              memory: 128Mi
+
+            # The absolute maximum resources this container is allowed to consume
+            limits:
+              # Prevent the container from using more than 20% of 1 CPU core (200 milliCPUs)
+              cpu: 200m
+              # Prevent the container from using more than 256 Megabytes of RAM
+              memory: 256Mi
+
+          # Defines the network ports the container exposes
+          ports:
+            # The container listens internally on port 80 (standard HTTP port)
+            - containerPort: 80
+
+---
+# --- separates multiple Kubernetes resources within the same file
+
+# Specifies the API version for the Service resource
+apiVersion: v1
+# Defines the type of resource (a Service acts as a load balancer/endpoint for the Pods)
+kind: Service
+
+# Metadata containing basic information about the Service
+metadata:
+  # The DNS name of the service (other pods can access it using http://php-apache)
+  name: php-apache
+
+# Defines how traffic should be routed to the Pods
+spec:
+  # Route traffic exclusively to Pods that carry this exact label
+  selector:
+    app: php-apache
+
+  # Network port configurations for incoming traffic
+  ports:
+    # The port number exposed by the Service to the rest of the cluster
+    - port: 80
+      # The target port on the destination Pod where the traffic is actually forwarded
+      targetPort: 80
