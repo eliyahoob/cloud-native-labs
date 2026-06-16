@@ -1,0 +1,44 @@
+# Docker compose engine version 3.8
+version: '3.8'
+
+# Main block containing services (containers) to run
+services:
+  db:
+    # Official PostgreSQL image from Docker Hub                                           
+    image: postgres:15-alpine
+    container_name: postgres-db    
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB} 
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+                                                             
+    networks:
+      - ansible_project-network
+
+
+# Use PGADMIN as the service graphic infrastructure management tool           
+  pgadmin:
+             
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin-ui                                                
+    ports:
+      - "8080:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    networks:
+      - ansible_project-network
+
+
+# Offical setting of the volume we've used in db service                                                        
+volumes:
+  pgdata:
+
+networks:
+  ansible_project-network:
+    external: true # tells docker to use existing network created by ansible playbook, not to create new one

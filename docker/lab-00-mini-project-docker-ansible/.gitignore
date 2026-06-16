@@ -1,0 +1,11 @@
+# ---------------------------------------------------------------------------
+# Environmental Secrets (Crucial to block to prevent data leaks)
+# ---------------------------------------------------------------------------
+/ansible/.env
+/.env
+
+# ---------------------------------------------------------------------------
+# Environmental keys for SSH login (Crucial to block to prevent data leaks)
+# ---------------------------------------------------------------------------
+ansible-key
+ansible-key.pub

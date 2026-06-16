@@ -8,11 +8,30 @@ This guide details the step-by-step execution, raw configuration files, and depl
 
 Before writing configuration files, the target directory schema must be established exactly as follows:
 
+
 ```text
 mini-project/
 ├── ansible/
+├── ansible-master/
+├── ansible-slave/
+├── app/
+│   └── src/
+└── database/
+```
+
+Folders can be created via CLI (PowerShell):
+```PowerShell
+mkdir ansible, ansible-master, ansible-slave, app\src, database
+```
+
+The  final structure (folders and files) will look like this:
+```text
+mini-project/
+├── .gitignore
+├── .env
+├── ansible/
+│   ├── .env
 │   ├── deploy.yml
-│   ├── docker-compose.yml
 │   └── inventory.ini
 ├── ansible-master/
 │   ├── Dockerfile
@@ -28,8 +47,37 @@ mini-project/
 │   └── Dockerfile
 └── database/
     └── docker-compose.yml
-
 ```
+
+
+
+### 🔐 DevSecOps Security Configurations
+### 📄 `.gitignore`
+Create a **.gitignore** file in the root directory (mini-project/) to ensure no sensitive credentials, keys, or locally configured variables ever leak to public version control systems:
+```plaintext
+# ---------------------------------------------------------------------------
+# Environmental Secrets (Crucial to block to prevent data leaks)
+# ---------------------------------------------------------------------------
+/ansible/.env
+/.env
+
+# ---------------------------------------------------------------------------
+# Environmental keys for SSH login (Crucial to block to prevent data leaks)
+# ---------------------------------------------------------------------------
+ansible-key
+ansible-key.pub
+```
+### 📄 `.env`
+Create a .env file directly **in the project root folder and inside the ansible/ folder** (As this project uses DinD this is the secure solution I've deciced to go with. There are other ways too):
+```plaintext
+POSTGRES_DB=mydatabase
+POSTGRES_USER=mysecureuser
+POSTGRES_PASSWORD=SuperSecurePassword2026!
+PGADMIN_DEFAULT_EMAIL=admin@admin.com
+PGADMIN_DEFAULT_PASSWORD=adminpassword
+```
+
+
 
 ### 🔑 Cryptographic Authentication Setup
 
@@ -68,10 +116,10 @@ from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 
-DB_HOST = os.getenv("DB_HOST", "ansible-slave-2")
-DB_NAME = os.getenv("POSTGRES_DB", "mydatabase")
-DB_USER = os.getenv("POSTGRES_USER", "myuser")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "mysecretpassword")
+DB_HOST = os.getenv("DB_HOST", "postgres-db")
+DB_NAME = os.getenv("POSTGRES_DB")
+DB_USER = os.getenv("POSTGRES_USER")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
 def get_db_connection():
     """Establishes connection to PostgreSQL with fault-tolerant retry logic."""
@@ -131,23 +179,29 @@ if __name__ == "__main__":
 ### 📄 `app/Dockerfile`
 
 ```dockerfile
+# OS: Slim environment running Python 3.11 slim									   
 FROM python:3.11-slim
-
+											
 WORKDIR /app
 
 # Install dependencies early to optimize layer caching
 COPY src/requirements.txt .
+
+# Install the libraries Python needs 									 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy the rest of the application code to the container														
 COPY src/ ./src
 
+# Expose port 5000				  
 EXPOSE 5000
 
+# Run health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:5000/users || exit 1
 
+# Run the application					 
 CMD ["python", "src/app.py"]
-
 ```
 
 ### 📄 `app/docker-compose.yml`
@@ -156,24 +210,23 @@ CMD ["python", "src/app.py"]
 version: '3.8'
 
 services:
-  web:
+  web-app:
     build: .
-    image: elibrodyisrael/python-app:latest
     ports:
-      - "5000:5000"
+     - "5000:5000"
     environment:
-      - DB_HOST=${DB_HOST}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      DB_HOST: postgres-db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Allow the container to access the host machine using "host.docker.internal"
     networks:
-      - app-net
+      - ansible_project-network # Join the Ansible virtual network
 
 networks:
-  app-net:
-    external: true
-    name: ansible_infra-network
-
+  ansible_project-network:
+    external: true # Use the existing Ansible virtual network. Tell Docker this virtual network is already created outside of this docker-compose file
 ```
 
 ---
@@ -185,10 +238,13 @@ Both master and slave units utilize standardized **Ubuntu OS** baselines hardene
 ### 📄 `ansible-master/Dockerfile`
 
 ```dockerfile
+# Ubuntu OS	   
 FROM ubuntu:22.04
 
+# Tell Ubuntu: Do not show interactive menus.											 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Commands: update system, install: Ansible, SSH tools, GIT.															
 RUN apt-get update && apt-get install -y \
     ansible \
     openssh-client \
@@ -196,44 +252,50 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Establish runtime SSH key layouts
+# Establish runtime SSH key layouts (Create the .ssh directory inside the master container for root user)
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
+# Copy the private key (the key itself) into the Master's SSH directory																	   
 COPY ansible-key /root/.ssh/id_rsa
 RUN chmod 600 /root/.ssh/id_rsa
 
-# Suppress host key verification safety prompts for programmatic flows
+# Disable SSH strict host key checking (prevents manual "yes/no" prompts)
 RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
 
-WORKDIR /workspace
+# Set the default working directory where playbooks will sit															
+WORKDIR /ansible
 CMD ["tail", "-f", "/dev/null"]
-
 ```
 
 ### 📄 `ansible-slave/Dockerfile`
 
 ```dockerfile
+#OS: Ubuntu
 FROM ubuntu:22.04
-
-ENV DEBIAN_FRONTEND=noninteractive
-
+						  
+# Update system and install SSH
 RUN apt-get update && apt-get install -y \
-    openssh-server \
-    python3 \
+    openssh-server \			 
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && mkdir /var/run/sshd
 
-# Configure standard openSSH daemon parameters
-RUN mkdir /var/run/sshd
+# Set SSH key for root user
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
-# Mount public key identity into runtime authority profile
+# Copy the public key into the "authorized_keys" file
 COPY ansible-key.pub /root/.ssh/authorized_keys
 RUN chmod 600 /root/.ssh/authorized_keys
 
-# Install Docker CLI binaries inside the slave so it can build/run native host commands
-RUN curl -fsSL [https://get.docker.com](https://get.docker.com) | sh
+# Configure SSH daemon to permit root login and public key auth
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config \
+    && sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
 
+# Install Docker (in the Ansible-Slave Docker container)
+RUN curl -fsSL https://get.docker.com | sh
+
+# Open SSH port
 EXPOSE 22
+
+# Run SSH service in the backround
 CMD ["/usr/sbin/sshd", "-D"]
 
 ```
@@ -245,42 +307,50 @@ CMD ["/usr/sbin/sshd", "-D"]
 ### 📄 `database/docker-compose.yml`
 
 ```yaml
+# Docker compose engine version 3.8
 version: '3.8'
 
+# Main block containing services (containers) to run
 services:
   db:
+    # Official PostgreSQL image from Docker Hub                                           
     image: postgres:15-alpine
-    container_name: postgres-db
+    container_name: postgres-db    
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB} 
+
     volumes:
       - pgdata:/var/lib/postgresql/data
+                                                             
     networks:
-      - app-net
+      - ansible_project-network
 
+
+# Use PGADMIN as the service graphic infrastructure management tool           
   pgadmin:
+             
     image: dpage/pgadmin4:latest
-    container_name: pgadmin-ui
+    container_name: pgadmin-ui                                                
     ports:
       - "8080:80"
     environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
-      - PGADMIN_DEFAULT_PASSWORD=adminpassword
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     networks:
-      - app-net
+      - ansible_project-network
 
+
+# Offical setting of the volume we've used in db service                                                        
 volumes:
   pgdata:
 
 networks:
-  app-net:
-    external: true
-    name: ansible_infra-network
-
+  ansible_project-network:
+    external: true # tells docker to use existing network created by ansible playbook, not to create new one
 ```
 
 ---
@@ -295,46 +365,54 @@ This acts as the root architecture framework, establishing the multi-node lab en
 version: '3.8'
 
 services:
+  # Server #1 Ansible Master
   ansible-master:
     image: elibrodyisrael/ansible-master:latest
+    # restart: always
     container_name: ansible-master
+    # ports:
+    #   - "5432:5432"
     volumes:
-      - ..:/workspace
+      - ../:/lab-00-mini-project-docker-ansible
     networks:
-      - infra-network
-
+      - ansible_project-network
+    depends_on:
+      - ansible-slave-1
+      - ansible-slave-2
+  
+  # Server #2 Ansible Slave 1
   ansible-slave-1:
     image: elibrodyisrael/ansible-slave:latest
+    # restart: always
     container_name: ansible-slave-1
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      - infra-network
-
+      - ansible_project-network
+    volumes:
+      # Alloes Ubuntu container use the docker on the host machine (Docker in Docker)
+      - /var/run/docker.sock:/var/run/docker.sock                  
   ansible-slave-2:
     image: elibrodyisrael/ansible-slave:latest
+    # restart: always
     container_name: ansible-slave-2
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      - infra-network
-
+      - ansible_project-network
+    volumes:
+      # Alloes Ubuntu container use the docker on the host machine (Docker in Docker)
+      - /var/run/docker.sock:/var/run/docker.sock                   
 networks:
-  infra-network:
-    name: ansible_infra-network
+                
+  ansible_project-network:
     driver: bridge
-
 ```
 
 ### 📄 `ansible/inventory.ini`
 
 ```ini
 [app_servers]
-ansible-slave-1 ansible_user=root
+ansible-slave-1 ansible_user=root ansible_ssh_private_key_file=/root/.ssh/id_rsa
 
 [db_servers]
-ansible-slave-2 ansible_user=root
-
+ansible-slave-2 ansible_user=root ansible_ssh_private_key_file=/root/.ssh/id_rsa
 ```
 
 ### 📄 `ansible/deploy.yml`
@@ -343,52 +421,54 @@ ansible-slave-2 ansible_user=root
 ---
 - name: Multi-Node Infrastructure Automated Orchestration Pipeline
   hosts: all
-  gather_facts: no
   tasks:
-    - name: Assert Target Transport State via SSH Ping
-      ansible.builtin.ping:
+    # Tasks for the applicatio server (ansible-slave-1)
+    - name: Deploy Phtyon API on Application Server
+      block:
+        - name: Create app directory on Slave 1
+          file:
+            path: /opt/app
+            state: directory
 
-- name: Provision Application Server Infrastructure Instance
-  hosts: app_servers
-  tasks:
-    - name: Synchronize Runtime Configurations to App Node
-      ansible.builtin.copy:
-        src: /workspace/app/
-        dest: /opt/app/
-        mode: '0755'
+        - name: Copy App files from local PC to Slave 1
+          copy:
+            src: /lab-00-mini-project-docker-ansible/app/
+            dest: /opt/app/
+            
+        - name: Copy .env file to Slave 1 root (for Docker Compose relative path)
+          copy:
+            src: .env
+            dest: /opt/app/.env
 
-    - name: Trigger Remote Docker Orchestration Instance
-      ansible.builtin.shell: |
-        cd /opt/app
-        export DB_HOST=ansible-slave-2
-        export POSTGRES_DB=mydatabase
-        export POSTGRES_USER=myuser
-        export POSTGRES_PASSWORD=mysecretpassword
-        docker compose down
-        docker compose up -d --build
-      async: 300
-      poll: 10
+        - name: Start Python App Container using Docker Compose
+          command: docker compose up -d --build
+          args:
+            chdir: /opt/app
+      when: inventory_hostname == 'ansible-slave-1'
 
-- name: Provision Relational Database Storage Engine
-  hosts: db_servers
-  tasks:
-    - name: Synchronize Storage Definitions to Database Node
-      ansible.builtin.copy:
-        src: /workspace/database/
-        dest: /opt/database/
-        mode: '0755'
+    # Tasks for the database server (ansible-slave-2)
+    - name: Deploy PostgreSQL & pgAdmin on Database Server
+      block:
+        - name: Create database directory on Slave 2
+          file:
+            path: /opt/database
+            state: directory
 
-    - name: Trigger Remote Datastore Runtime Initialization
-      ansible.builtin.shell: |
-        cd /opt/database
-        export POSTGRES_DB=mydatabase
-        export POSTGRES_USER=myuser
-        export POSTGRES_PASSWORD=mysecretpassword
-        docker compose down
-        docker compose up -d
-      async: 300
-      poll: 10
+        - name: Copy Database files from local PC to Slave 2
+          copy:
+            src: /lab-00-mini-project-docker-ansible/database/
+            dest: /opt/database/
+            
+        - name: Copy .env file to Slave 2 root (for Docker Compose relative path)
+          copy:
+            src: .env
+            dest: /opt/database/.env
 
+        - name: Start Database Containers             
+          command: docker compose up -d
+          args:
+            chdir: /opt/database
+      when: inventory_hostname == 'ansible-slave-2'
 ```
 
 ---
@@ -422,7 +502,7 @@ docker compose up -d
 docker exec -it ansible-master bash
 
 # Navigate inside the mounted playbook project scope
-cd /workspace/ansible
+cd /lab-00-mini-project-docker-ansible/ansible
 
 # Execute the automation playbook 
 ansible-playbook -i inventory.ini deploy.yml
@@ -434,6 +514,88 @@ ansible-playbook -i inventory.ini deploy.yml
 Open your web browser on your native host operating system and query the network links:
 
 * **Application Health Check Endpoint:** `http://localhost:5000/users`
-* **Database Management UI Panel:** `http://localhost:8080` (Log in with `admin@admin.com` / `adminpassword`)
+* **Database Management UI Panel:** `http://localhost:8080` (Log in with the credentials specified in your .env file)
+
+
+## 🧹 Step 7: Project Teardown & Environment Cleanup
+
+Here is how to completely stop, clean, and remove all infrastructure components created during this lab.
+
+### 1. Stop and Remove All Containers
+Run the following combined command from your project root folder to gracefully stop and remove containers across all components:
+```powershell
+cd ansible && docker compose down && cd ../app && docker compose down && cd ../database && docker compose down
+```
+
+> **💡 SUCCESS TOOL TIP (PowerShell v7+):**
+> If you are using an old version of Powershell (older than 7), you can use the the older chain:
+> 
+> cd ansible; docker compose down; cd ../app; docker compose down; cd ../database; docker compose down 
+>
+> To upgrade to powershell v7+ visit: https://aka.ms/Powershell7
+
+
+---
+
+### 2. View and Delete Persistent Volumes
+
+During this lab, PostgreSQL was configured with persistent storage. To list and remove the project volume:
+
+* **View existing volumes:**
+
+```bash
+  docker volume ls
+
+```
+
+* **Delete the database volume:**
+
+```bash
+  docker volume rm database_pgdata
+
+```
+
+---
+
+### 3. Deep Cleanup: What Did We Actually Create?
+
+Instead of a generic wipe, here is exactly what this project built in your Docker environment and how to remove each specific component:
+
+#### 🔹 Dedicated Docker Network
+
+Ansible created an isolated network called `ansible_project-network` to bridge the app and database containers.
+
+* **Remove it:**
+
+```bash
+  docker network rm ansible_project-network
+
+```
+
+#### 🔹 Custom Built Images
+
+We built custom Docker images for our management nodes and our application.
+
+* **Remove the Lab Infrastructure Images:**
+
+```bash
+  docker rmi elibrodyisrael/ansible-master:latest
+  docker rmi elibrodyisrael/ansible-slave:latest
+
+```
+
+* **Remove the Python App Image:**
+
+```bash
+  docker rmi app-web-app
+
+```
+
+#### 🔹 Unused Cache & Dangling Layers
+
+To ensure your local disk is 100% clean from build caches and stopped container leftovers:
+
+```bash
+docker system prune -f
 
 ```

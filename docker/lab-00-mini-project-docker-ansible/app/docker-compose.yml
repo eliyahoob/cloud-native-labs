@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  web-app:
+    build: .
+    ports:
+     - "5000:5000"
+    environment:
+      DB_HOST: postgres-db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Allow the container to access the host machine using "host.docker.internal"
+    networks:
+      - ansible_project-network # Join the Ansible virtual network
+
+networks:
+  ansible_project-network:
+    external: true # Use the existing Ansible virtual network. Tell Docker this virtual network is already created outside of this docker-compose file
+

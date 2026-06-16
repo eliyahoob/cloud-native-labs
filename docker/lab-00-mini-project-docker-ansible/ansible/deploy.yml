@@ -1,0 +1,51 @@
+---
+- name: Multi-Node Infrastructure Automated Orchestration Pipeline
+  hosts: all
+  tasks:
+    # Tasks for the applicatio server (ansible-slave-1)
+    - name: Deploy Phtyon API on Application Server
+      block:
+        - name: Create app directory on Slave 1
+          file:
+            path: /opt/app
+            state: directory
+
+        - name: Copy App files from local PC to Slave 1
+          copy:
+            src: /lab-00-mini-project-docker-ansible/app/
+            dest: /opt/app/
+            
+        - name: Copy .env file to Slave 1 root (for Docker Compose relative path)
+          copy:
+            src: .env
+            dest: /opt/app/.env
+
+        - name: Start Python App Container using Docker Compose
+          command: docker compose up -d --build
+          args:
+            chdir: /opt/app
+      when: inventory_hostname == 'ansible-slave-1'
+
+    # Tasks for the database server (ansible-slave-2)
+    - name: Deploy PostgreSQL & pgAdmin on Database Server
+      block:
+        - name: Create database directory on Slave 2
+          file:
+            path: /opt/database
+            state: directory
+
+        - name: Copy Database files from local PC to Slave 2
+          copy:
+            src: /lab-00-mini-project-docker-ansible/database/
+            dest: /opt/database/
+            
+        - name: Copy .env file to Slave 2 root (for Docker Compose relative path)
+          copy:
+            src: .env
+            dest: /opt/database/.env
+
+        - name: Start Database Containers             
+          command: docker compose up -d
+          args:
+            chdir: /opt/database
+      when: inventory_hostname == 'ansible-slave-2'

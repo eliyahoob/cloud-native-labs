@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # Server #1 Ansible Master
+  ansible-master:
+    image: elibrodyisrael/ansible-master:latest
+    # restart: always
+    container_name: ansible-master
+    # ports:
+    #   - "5432:5432"
+    volumes:
+      - ../:/lab-00-mini-project-docker-ansible
+    networks:
+      - ansible_project-network
+    depends_on:
+      - ansible-slave-1
+      - ansible-slave-2
+  
+  # Server #2 Ansible Slave 1
+  ansible-slave-1:
+    image: elibrodyisrael/ansible-slave:latest
+    # restart: always
+    container_name: ansible-slave-1
+    networks:
+      - ansible_project-network
+    volumes:
+      # Alloes Ubuntu container use the docker on the host machine (Docker in Docker)
+      - /var/run/docker.sock:/var/run/docker.sock                  
+  ansible-slave-2:
+    image: elibrodyisrael/ansible-slave:latest
+    # restart: always
+    container_name: ansible-slave-2
+    networks:
+      - ansible_project-network
+    volumes:
+      # Alloes Ubuntu container use the docker on the host machine (Docker in Docker)
+      - /var/run/docker.sock:/var/run/docker.sock                   
+networks:
+                
+  ansible_project-network:
+    driver: bridge
